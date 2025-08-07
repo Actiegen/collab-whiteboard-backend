@@ -51,12 +51,35 @@ class FirestoreService:
             return User(**doc.to_dict())
         return None
 
-    async def update_user_presence(self, user_id: str, is_online: bool):
-        """Update user online status"""
-        self.users_collection.document(user_id).update({
-            "is_online": is_online,
-            "last_seen": datetime.utcnow()
-        })
+    async def update_user_presence(self, user_id: str, is_online: bool, username: str = None):
+        """Update user online status - creates user if doesn't exist"""
+        print(f"update_user_presence called: user_id={user_id}, is_online={is_online}, username={username}")
+        
+        try:
+            # Try to update existing user
+            print("Trying to update existing user...")
+            self.users_collection.document(user_id).update({
+                "is_online": is_online,
+                "last_seen": datetime.utcnow()
+            })
+            print("User updated successfully")
+        except Exception as e:
+            # User doesn't exist, create it
+            print(f"User doesn't exist, creating new user. Error: {e}")
+            if username is None:
+                username = user_id.split("@")[0] if "@" in user_id else user_id
+            
+            user_doc = {
+                "id": user_id,
+                "username": username,
+                "email": user_id if "@" in user_id else None,
+                "is_online": is_online,
+                "last_seen": datetime.utcnow(),
+                "created_at": datetime.utcnow()
+            }
+            print(f"Creating user document: {user_doc}")
+            self.users_collection.document(user_id).set(user_doc)
+            print("User created successfully")
 
     # Room Operations
     async def create_room(self, room_data: RoomCreate, created_by: str) -> Room:
@@ -87,7 +110,7 @@ class FirestoreService:
         return [Room(**doc.to_dict()) for doc in docs]
 
     # Message Operations
-    async def create_message(self, message_data: MessageCreate, username: str) -> Message:
+    async def create_message(self, message_data: MessageCreate, username: str, file_url: str = None, file_name: str = None, file_type: str = None) -> Message:
         """Create a new message"""
         message_id = str(uuid.uuid4())
         message_doc = {
@@ -98,9 +121,9 @@ class FirestoreService:
             "user_id": message_data.user_id,
             "username": username,
             "created_at": datetime.utcnow(),
-            "file_url": None,
-            "file_name": None,
-            "file_type": None
+            "file_url": file_url,
+            "file_name": file_name,
+            "file_type": file_type
         }
         
         self.messages_collection.document(message_id).set(message_doc)

@@ -63,25 +63,41 @@ async def test_endpoint():
 async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: str):
     """WebSocket endpoint for real-time chat and whiteboard collaboration"""
     try:
-        # Get user info
-        from app.services.firestore_service import FirestoreService
-        firestore_service = FirestoreService()
-        user = await firestore_service.get_user(user_id)
+        print(f"WebSocket connection attempt: room_id={room_id}, user_id={user_id}")
         
-        if not user:
-            await websocket.close(code=4004, reason="User not found")
-            return
+        # For testing purposes, allow connections without user validation
+        if user_id == "test-user":
+            username = "Test User"
+        elif "@" in user_id:  # Email address from Google Auth
+            # Extract username from email (part before @)
+            username = user_id.split("@")[0]
+            print(f"Using email-based username: {username}")
+            # Optionally, you could create/update user in Firestore here
+            # await firestore_service.create_or_update_user(user_id, username)
+        else:
+            # Get user info from Firestore for real users
+            from app.services.firestore_service import FirestoreService
+            firestore_service = FirestoreService()
+            user = await firestore_service.get_user(user_id)
+            
+            if not user:
+                await websocket.close(code=4004, reason="User not found")
+                return
+            
+            username = user.username
         
-        # Connect to room
-        await manager.connect(websocket, room_id, user_id, user.username)
+        print(f"Connecting user {username} to room {room_id}")
+        
+        # Connect to room (this will handle websocket.accept())
+        await manager.connect(websocket, room_id, user_id, username)
         
         # Send initial room state
         initial_state = {
             "type": "room_joined",
             "room_id": room_id,
             "user_id": user_id,
-            "username": user.username,
-            "message": f"{user.username} joined the room"
+            "username": username,
+            "message": f"{username} joined the room"
         }
         await websocket.send_text(json.dumps(initial_state))
         

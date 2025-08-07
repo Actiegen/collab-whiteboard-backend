@@ -35,18 +35,10 @@ class StorageService:
         return unique_filename
 
     async def generate_download_url(self, filename: str, expiration_hours: int = 24) -> str:
-        """Generate a signed download URL for a file"""
-        blob = self.bucket.blob(filename)
-        
-        # Generate signed URL
-        expiration = datetime.utcnow() + timedelta(hours=expiration_hours)
-        url = blob.generate_signed_url(
-            version="v4",
-            expiration=expiration,
-            method="GET"
-        )
-        
-        return url
+        """Generate a public download URL for a file"""
+        # For now, use public URL instead of signed URL
+        # This requires the bucket to be public or the object to be public
+        return f"https://storage.googleapis.com/{settings.storage_bucket_name}/{filename}"
 
     async def delete_file(self, filename: str) -> bool:
         """Delete a file from Google Cloud Storage"""

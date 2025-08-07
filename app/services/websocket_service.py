@@ -18,7 +18,10 @@ class ConnectionManager:
 
     async def connect(self, websocket: WebSocket, room_id: str, user_id: str, username: str):
         """Connect a user to a room"""
+        print(f"Manager.connect called: room_id={room_id}, user_id={user_id}, username={username}")
+        
         await websocket.accept()
+        print("WebSocket accepted")
         
         if room_id not in self.active_connections:
             self.active_connections[room_id] = []
@@ -29,12 +32,41 @@ class ConnectionManager:
             "username": username,
             "room_id": room_id
         }
+        print(f"User added to room {room_id}")
         
         # Update user presence
-        await self.firestore_service.update_user_presence(user_id, True)
+        try:
+            print("Updating user presence...")
+            await self.firestore_service.update_user_presence(user_id, True, username)
+            print("User presence updated successfully")
+        except Exception as e:
+            print(f"Error updating user presence: {e}")
         
         # Notify others in the room
-        await self.broadcast_presence(room_id, user_id, username, True)
+        try:
+            print("Broadcasting presence...")
+            await self.broadcast_presence(room_id, user_id, username, True)
+            print("Presence broadcasted successfully")
+            
+            # Send current user the list of all online users in the room
+            room_users = self.get_room_users(room_id)
+            users_message = {
+                "type": "presence",
+                "users": [
+                    {
+                        "user_id": user.user_id,
+                        "username": user.username,
+                        "is_online": user.is_online,
+                        "timestamp": user.last_seen.isoformat()
+                    }
+                    for user in room_users
+                ]
+            }
+            await websocket.send_text(json.dumps(users_message))
+            print(f"Sent {len(room_users)} online users to new user")
+            
+        except Exception as e:
+            print(f"Error broadcasting presence: {e}")
 
     async def disconnect(self, websocket: WebSocket):
         """Disconnect a user"""
@@ -54,7 +86,7 @@ class ConnectionManager:
             del self.connection_users[websocket]
             
             # Update user presence
-            await self.firestore_service.update_user_presence(user_id, False)
+            await self.firestore_service.update_user_presence(user_id, False, username)
             
             # Notify others in the room
             await self.broadcast_presence(room_id, user_id, username, False)
@@ -76,14 +108,24 @@ class ConnectionManager:
 
     async def broadcast_presence(self, room_id: str, user_id: str, username: str, is_online: bool):
         """Broadcast user presence to room"""
-        presence_message = {
-            "type": "presence",
-            "user_id": user_id,
-            "username": username,
-            "is_online": is_online,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        await self.broadcast_to_room(json.dumps(presence_message), room_id)
+        if is_online:
+            # User joined
+            join_message = {
+                "type": "user_joined",
+                "user_id": user_id,
+                "username": username,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            await self.broadcast_to_room(json.dumps(join_message), room_id)
+        else:
+            # User left
+            leave_message = {
+                "type": "user_left",
+                "user_id": user_id,
+                "username": username,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            await self.broadcast_to_room(json.dumps(leave_message), room_id)
 
     async def handle_chat_message(self, websocket: WebSocket, data: dict):
         """Handle incoming chat message"""
@@ -103,7 +145,18 @@ class ConnectionManager:
             user_id=user_id
         )
         
-        message = await self.firestore_service.create_message(message_data, username)
+        # Add file data if present
+        file_url = data.get("file_url")
+        file_name = data.get("file_name")
+        file_type = data.get("file_type")
+        
+        message = await self.firestore_service.create_message(
+            message_data, 
+            username,
+            file_url=file_url,
+            file_name=file_name,
+            file_type=file_type
+        )
         
         # Broadcast to room
         message_payload = {
@@ -133,42 +186,40 @@ class ConnectionManager:
         user_id = user_info["user_id"]
         username = user_info["username"]
         
-        # Create whiteboard action
-        action = WhiteboardAction(
-            action_type=data["action_type"],
-            user_id=user_id,
-            username=username,
-            room_id=room_id,
-            timestamp=datetime.utcnow(),
-            data=data.get("data", {}),
-            x=data.get("x"),
-            y=data.get("y"),
-            color=data.get("color"),
-            brush_size=data.get("brush_size"),
-            is_drawing=data.get("is_drawing")
-        )
+        action_type = data.get("action_type")
         
-        # Save to database
-        await self.firestore_service.save_whiteboard_action(action)
-        
-        # Broadcast to room
+        # Create whiteboard action payload
         action_payload = {
             "type": "whiteboard_action",
             "action": {
-                "action_type": action.action_type,
-                "user_id": action.user_id,
-                "username": action.username,
-                "timestamp": action.timestamp.isoformat(),
-                "data": action.data,
-                "x": action.x,
-                "y": action.y,
-                "color": action.color,
-                "brush_size": action.brush_size,
-                "is_drawing": action.is_drawing
+                "action_type": action_type,
+                "user_id": user_id,
+                "username": username,
+                "timestamp": datetime.utcnow().isoformat(),
+                "stroke": data.get("stroke"),
+                "data": data.get("data", {})
             }
         }
         
-        await self.broadcast_to_room(json.dumps(action_payload), room_id)
+        # Save to database if it's a final action
+        if action_type in ["stroke_end", "clear_canvas"]:
+            action = WhiteboardAction(
+                action_type=action_type,
+                user_id=user_id,
+                username=username,
+                room_id=room_id,
+                timestamp=datetime.utcnow(),
+                data=data.get("stroke") or data.get("data", {}),
+                x=data.get("x"),
+                y=data.get("y"),
+                color=data.get("color"),
+                brush_size=data.get("brush_size"),
+                is_drawing=data.get("is_drawing")
+            )
+            await self.firestore_service.save_whiteboard_action(action)
+        
+        # Broadcast to room (excluding sender for real-time updates)
+        await self.broadcast_to_room(json.dumps(action_payload), room_id, exclude_websocket=websocket)
 
     async def handle_file_upload(self, websocket: WebSocket, data: dict):
         """Handle file upload notification"""
