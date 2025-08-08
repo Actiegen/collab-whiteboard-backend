@@ -2,6 +2,19 @@
 
 A real-time collaborative whiteboard and chat backend built with FastAPI, featuring WebSocket support, Google Cloud Firestore, and Google Cloud Storage.
 
+---
+
+> ⚠️ **Disclaimer**  
+> This project is **not intended for production use by companies**.
+>
+> It must contain security breaches
+>  
+> The main purpose of this repository is **educational**, focused on:
+> - Python with FastAPI and Google Cloud
+> - Google Cloud Firestore and Cloud Storage
+
+---
+
 ## Features
 
 - **Real-time Communication**: WebSocket-based chat and whiteboard collaboration
@@ -116,8 +129,8 @@ ALLOWED_ORIGINS=["http://localhost:3000", "https://your-frontend-domain.vercel.a
 GOOGLE_PROJECT_ID=your-google-cloud-project-id
 
 # Cloud Storage Settings
-STORAGE_BUCKET_NAME=your-collab-whiteboard-files
-STORAGE_BUCKET_URL=https://storage.googleapis.com/your-collab-whiteboard-files
+STORAGE_BUCKET_NAME=YOUR_BUCKET_NAME
+STORAGE_BUCKET_URL=https://storage.googleapis.com/YOUR_BUCKET_NAME
 
 # File Upload Settings
 MAX_FILE_SIZE=10485760  # 10MB in bytes
@@ -204,8 +217,8 @@ docker push us-east1-docker.pkg.dev/YOUR_PROJECT_ID/collab-whiteboard-backend/VE
 
 **Example with specific version:**
 ```bash
-docker build -t us-east1-docker.pkg.dev/sandbox-356900/collab-whiteboard-backend/0.0.10 .
-docker push us-east1-docker.pkg.dev/sandbox-356900/collab-whiteboard-backend/0.0.10
+docker build -t us-east1-docker.pkg.dev/YOUR_PROJECT_ID/collab-whiteboard-backend/0.0.10 .
+docker push us-east1-docker.pkg.dev/YOUR_PROJECT_ID/collab-whiteboard-backend/0.0.10
 ```
 
 ### 2. Deploy to Cloud Run
@@ -225,14 +238,14 @@ gcloud run deploy collab-whiteboard-backend \
 **Complete example:**
 ```bash
 gcloud run deploy collab-whiteboard-backend \
-  --image us-east1-docker.pkg.dev/sandbox-356900/collab-whiteboard-backend/0.0.10 \
+  --image us-east1-docker.pkg.dev/YOUR_PROJECT_ID/collab-whiteboard-backend/0.0.10 \
   --platform managed \
   --port 8000 \
   --timeout 3600 \
   --region us-east1 \
   --allow-unauthenticated \
-  --set-env-vars GOOGLE_PROJECT_ID=sandbox-356900,STORAGE_BUCKET_NAME=collab-whiteboard-files,STORAGE_BUCKET_URL=https://storage.googleapis.com/collab-whiteboard-files,DEBUG=true,MAX_FILE_SIZE=10485760 \
-  --service-account=collab-whiteboard-sa@sandbox-356900.iam.gserviceaccount.com
+  --set-env-vars GOOGLE_PROJECT_ID=YOUR_PROJECT_ID,STORAGE_BUCKET_NAME=collab-whiteboard-files,STORAGE_BUCKET_URL=https://storage.googleapis.com/collab-whiteboard-files,DEBUG=true,MAX_FILE_SIZE=10485760 \
+  --service-account=collab-whiteboard-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
 ```
 
 ### 3. Versioning
@@ -285,7 +298,7 @@ gcloud artifacts repositories create collab-whiteboard-backend \
 ### 4. Create Storage Bucket
 ```bash
 gsutil mb gs://YOUR_BUCKET_NAME
-gsutil iam ch allUsers:objectViewer gs://YOUR_BUCKET_NAME
+gsutil iam ch allUsers:objectViewer gs://YOUR_BUCKET_NAME  #This will make your bucket public so do not share sensetive data
 ```
 
 ### 5. Service Account Permissions
