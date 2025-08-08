@@ -65,6 +65,15 @@ class ConnectionManager:
             await websocket.send_text(json.dumps(users_message))
             print(f"Sent {len(room_users)} online users to new user")
             
+            # Also broadcast the user joined message to all users in the room
+            join_message = {
+                "type": "user_joined",
+                "user_id": user_id,
+                "username": username,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            await self.broadcast_to_room(json.dumps(join_message), room_id)
+            
         except Exception as e:
             print(f"Error broadcasting presence: {e}")
 
