@@ -190,29 +190,68 @@ MAX_FILE_SIZE=10485760  # 10MB in bytes
 
 ## Deployment to Google Cloud Run
 
+
+
 ### 1. Build and Push Docker Image
 
 ```bash
 # Build the image
-docker build -t gcr.io/YOUR_PROJECT_ID/collab-whiteboard-backend .
+docker build -t us-east1-docker.pkg.dev/YOUR_PROJECT_ID/collab-whiteboard-backend/VERSION .
 
-# Push to Google Container Registry
-docker push gcr.io/YOUR_PROJECT_ID/collab-whiteboard-backend
+# Push to Artifact Registry
+docker push us-east1-docker.pkg.dev/YOUR_PROJECT_ID/collab-whiteboard-backend/VERSION
+```
+
+**Example with specific version:**
+```bash
+docker build -t us-east1-docker.pkg.dev/sandbox-356900/collab-whiteboard-backend/0.0.10 .
+docker push us-east1-docker.pkg.dev/sandbox-356900/collab-whiteboard-backend/0.0.10
 ```
 
 ### 2. Deploy to Cloud Run
 
 ```bash
 gcloud run deploy collab-whiteboard-backend \
-  --image gcr.io/YOUR_PROJECT_ID/collab-whiteboard-backend \
+  --image us-east1-docker.pkg.dev/YOUR_PROJECT_ID/collab-whiteboard-backend/VERSION \
   --platform managed \
-  --region us-central1 \
+  --port 8000 \
+  --timeout 3600 \
+  --region us-east1 \
   --allow-unauthenticated \
-  --set-env-vars GOOGLE_PROJECT_ID=YOUR_PROJECT_ID \
-  --set-env-vars STORAGE_BUCKET_NAME=YOUR_BUCKET_NAME
+  --set-env-vars GOOGLE_PROJECT_ID=YOUR_PROJECT_ID,STORAGE_BUCKET_NAME=YOUR_BUCKET_NAME,STORAGE_BUCKET_URL=https://storage.googleapis.com/YOUR_BUCKET_NAME,DEBUG=true,MAX_FILE_SIZE=10485760 \
+  --service-account=YOUR_SERVICE_ACCOUNT@YOUR_PROJECT_ID.iam.gserviceaccount.com
 ```
 
-### 3. Set Environment Variables
+**Complete example:**
+```bash
+gcloud run deploy collab-whiteboard-backend \
+  --image us-east1-docker.pkg.dev/sandbox-356900/collab-whiteboard-backend/0.0.10 \
+  --platform managed \
+  --port 8000 \
+  --timeout 3600 \
+  --region us-east1 \
+  --allow-unauthenticated \
+  --set-env-vars GOOGLE_PROJECT_ID=sandbox-356900,STORAGE_BUCKET_NAME=collab-whiteboard-files,STORAGE_BUCKET_URL=https://storage.googleapis.com/collab-whiteboard-files,DEBUG=true,MAX_FILE_SIZE=10485760 \
+  --service-account=collab-whiteboard-sa@sandbox-356900.iam.gserviceaccount.com
+```
+
+### 3. Versioning
+
+It's recommended to use semantic versioning for your Docker images:
+
+```bash
+# For a new version
+VERSION=0.0.11
+docker build -t us-east1-docker.pkg.dev/YOUR_PROJECT_ID/collab-whiteboard-backend/$VERSION .
+docker push us-east1-docker.pkg.dev/YOUR_PROJECT_ID/collab-whiteboard-backend/$VERSION
+
+# Deploy the new version
+gcloud run deploy collab-whiteboard-backend \
+  --image us-east1-docker.pkg.dev/YOUR_PROJECT_ID/collab-whiteboard-backend/$VERSION \
+  # ... other options
+```
+
+### 4. Set Environment Variables
 
 In Google Cloud Console:
 1. Go to Cloud Run service
@@ -226,6 +265,7 @@ In Google Cloud Console:
 gcloud services enable firestore.googleapis.com
 gcloud services enable storage.googleapis.com
 gcloud services enable run.googleapis.com
+gcloud services enable artifactregistry.googleapis.com
 ```
 
 ### 2. Create Firestore Database
@@ -233,18 +273,33 @@ gcloud services enable run.googleapis.com
 gcloud firestore databases create --project=YOUR_PROJECT_ID
 ```
 
-### 3. Create Storage Bucket
+### 3. Create Artifact Registry Repository
+```bash
+# Create repository for Docker images
+gcloud artifacts repositories create collab-whiteboard-backend \
+  --repository-format=docker \
+  --location=us-east1 \
+  --description="Docker repository for Collab Whiteboard Backend"
+```
+
+### 4. Create Storage Bucket
 ```bash
 gsutil mb gs://YOUR_BUCKET_NAME
 gsutil iam ch allUsers:objectViewer gs://YOUR_BUCKET_NAME
 ```
 
-### 4. Service Account Permissions
+### 5. Service Account Permissions
 For local development, ensure your authenticated account has:
 - Firestore User
 - Storage Object Admin
 
 For Cloud Run deployment, the default service account will automatically have the necessary permissions.
+
+### 6. Configure Docker Authentication
+```bash
+# Configure Docker to authenticate with Artifact Registry
+gcloud auth configure-docker us-east1-docker.pkg.dev
+```
 
 ## Testing
 
@@ -281,7 +336,3 @@ isort .
 3. Make your changes
 4. Add tests
 5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License.
