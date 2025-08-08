@@ -8,9 +8,9 @@ firestore_service = FirestoreService()
 
 
 @router.post("/rooms/", response_model=Room)
-async def create_room(room_data: RoomCreate, created_by: str):
+async def create_room(room_data: RoomCreate):
     """Create a new chat room"""
-    room = await firestore_service.create_room(room_data, created_by)
+    room = await firestore_service.create_room(room_data, room_data.created_by)
     return room
 
 
@@ -56,4 +56,19 @@ async def create_message(room_id: str, message_data: MessageCreate):
         raise HTTPException(status_code=404, detail="User not found")
     
     message = await firestore_service.create_message(message_data, user.username)
-    return MessageResponse(**message.dict()) 
+    return MessageResponse(**message.dict())
+
+
+@router.delete("/rooms/{room_id}")
+async def delete_room(room_id: str):
+    """Delete a room by setting is_active to False"""
+    # Verify room exists
+    room = await firestore_service.get_room(room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    success = await firestore_service.delete_room(room_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete room")
+    
+    return {"message": "Room deleted successfully"} 

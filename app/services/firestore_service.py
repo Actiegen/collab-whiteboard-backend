@@ -105,9 +105,23 @@ class FirestoreService:
 
     async def get_active_rooms(self) -> List[Room]:
         """Get all active rooms"""
-        query = self.rooms_collection.where(filter=FieldFilter("is_active", "==", True))
-        docs = query.stream()
+        # Get all rooms since we're now actually deleting them
+        docs = self.rooms_collection.stream()
         return [Room(**doc.to_dict()) for doc in docs]
+
+    async def delete_room(self, room_id: str) -> bool:
+        """Delete a room by actually removing it from Firestore"""
+        try:
+            room_doc = self.rooms_collection.document(room_id)
+            doc = room_doc.get()
+            if doc.exists:
+                # Actually delete the document from Firestore
+                room_doc.delete()
+                return True
+            return False
+        except Exception as e:
+            print(f"Error deleting room {room_id}: {e}")
+            return False
 
     # Message Operations
     async def create_message(self, message_data: MessageCreate, username: str, file_url: str = None, file_name: str = None, file_type: str = None) -> Message:
