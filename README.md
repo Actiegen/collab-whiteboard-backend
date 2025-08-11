@@ -349,3 +349,8 @@ isort .
 3. Make your changes
 4. Add tests
 5. Submit a pull request
+
+## 🎯 Roadmap
+
+- [ ] Implement api authentication
+- [ ] Remove public access to cloud storage and provide authenticated URLs for shared files
