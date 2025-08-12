@@ -6,6 +6,7 @@ from app.models.chat import Message, MessageCreate
 from app.models.whiteboard import WhiteboardAction
 from app.models.user import UserPresence
 from app.services.firestore_service import FirestoreService
+from app.services.yjs_service import yjs_service
 
 
 class ConnectionManager:
@@ -33,6 +34,9 @@ class ConnectionManager:
             "room_id": room_id
         }
         print(f"User added to room {room_id}")
+        
+        # Connect to Y.js collaboration service
+        await yjs_service.connect_client(websocket, room_id)
         
         # Update user presence
         try:
@@ -84,6 +88,9 @@ class ConnectionManager:
             room_id = user_info["room_id"]
             user_id = user_info["user_id"]
             username = user_info["username"]
+            
+            # Disconnect from Y.js collaboration service
+            await yjs_service.disconnect_client(websocket)
             
             # Remove from active connections
             if room_id in self.active_connections:
@@ -197,21 +204,19 @@ class ConnectionManager:
         
         action_type = data.get("action_type")
         
-        # Create whiteboard action payload
-        action_payload = {
-            "type": "whiteboard_action",
-            "action": {
-                "action_type": action_type,
-                "user_id": user_id,
-                "username": username,
-                "timestamp": datetime.utcnow().isoformat(),
-                "stroke": data.get("stroke"),
-                "data": data.get("data", {})
-            }
+        # Add user info to the action data
+        action_data = {
+            **data,
+            "user_id": user_id,
+            "username": username,
+            "timestamp": datetime.utcnow().isoformat()
         }
         
+        # Handle via Y.js service for real-time collaboration
+        await yjs_service.handle_stroke_action(websocket, action_data)
+        
         # Save to database if it's a final action
-        if action_type in ["stroke_end", "clear_canvas"]:
+        if action_type in ["stroke_complete", "clear_canvas"]:
             action = WhiteboardAction(
                 action_type=action_type,
                 user_id=user_id,
@@ -226,9 +231,6 @@ class ConnectionManager:
                 is_drawing=data.get("is_drawing")
             )
             await self.firestore_service.save_whiteboard_action(action)
-        
-        # Broadcast to room (excluding sender for real-time updates)
-        await self.broadcast_to_room(json.dumps(action_payload), room_id, exclude_websocket=websocket)
 
     async def handle_file_upload(self, websocket: WebSocket, data: dict):
         """Handle file upload notification"""

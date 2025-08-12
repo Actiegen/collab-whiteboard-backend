@@ -58,6 +58,36 @@ async def test_endpoint():
     }
 
 
+# Whiteboard collaboration WebSocket endpoint
+@app.websocket("/yjs/{room_id}")
+async def whiteboard_collaboration_endpoint(websocket: WebSocket, room_id: str):
+    """WebSocket endpoint for real-time whiteboard collaboration"""
+    from app.services.yjs_service import yjs_service
+    
+    try:
+        await websocket.accept()
+        print(f"Whiteboard collaboration connection accepted for room: {room_id}")
+        
+        doc = await yjs_service.connect_client(websocket, room_id)
+        
+        # Send current document state to new client
+        await yjs_service.send_current_state(websocket)
+        
+        # Handle collaboration messages
+        while True:
+            try:
+                message = await websocket.receive_text()
+                await yjs_service.handle_message(websocket, message)
+            except Exception as e:
+                print(f"Collaboration WebSocket error: {e}")
+                break
+                
+    except Exception as e:
+        print(f"Collaboration WebSocket connection error: {e}")
+    finally:
+        await yjs_service.disconnect_client(websocket)
+
+
 # WebSocket endpoint for real-time communication
 @app.websocket("/ws/{room_id}/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: str):
@@ -104,29 +134,40 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: str):
         # Handle incoming messages
         while True:
             try:
-                data = await websocket.receive_text()
-                message_data = json.loads(data)
+                # Receive either text or binary data
+                message = await websocket.receive()
                 
-                message_type = message_data.get("type")
-                
-                if message_type == "chat_message":
-                    await manager.handle_chat_message(websocket, message_data)
-                
-                elif message_type == "whiteboard_action":
-                    await manager.handle_whiteboard_action(websocket, message_data)
-                
-                elif message_type == "file_upload":
-                    await manager.handle_file_upload(websocket, message_data)
-                
-                elif message_type == "ping":
-                    await websocket.send_text(json.dumps({"type": "pong"}))
-                
-                else:
-                    # Echo back unknown message types
-                    await websocket.send_text(json.dumps({
-                        "type": "error",
-                        "message": f"Unknown message type: {message_type}"
-                    }))
+                if message["type"] == "websocket.receive":
+                    if "text" in message:
+                        # Handle text messages (JSON)
+                        data = message["text"]
+                        message_data = json.loads(data)
+                        
+                        message_type = message_data.get("type")
+                        
+                        if message_type == "chat_message":
+                            await manager.handle_chat_message(websocket, message_data)
+                        
+                        elif message_type == "whiteboard_action":
+                            await manager.handle_whiteboard_action(websocket, message_data)
+                        
+                        elif message_type == "file_upload":
+                            await manager.handle_file_upload(websocket, message_data)
+                        
+                        elif message_type == "ping":
+                            await websocket.send_text(json.dumps({"type": "pong"}))
+                        
+                        else:
+                            # Echo back unknown message types
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "message": f"Unknown message type: {message_type}"
+                            }))
+                    
+                    elif "bytes" in message:
+                        # Handle binary messages (Y.js updates)
+                        from app.services.yjs_service import yjs_service
+                        await yjs_service.handle_yjs_message(websocket, message["bytes"])
                     
             except json.JSONDecodeError:
                 await websocket.send_text(json.dumps({

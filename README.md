@@ -56,7 +56,8 @@ app/
 │   ├── __init__.py
 │   ├── firestore_service.py
 │   ├── storage_service.py
-│   └── websocket_service.py
+│   ├── websocket_service.py
+│   └── yjs_service.py
 └── utils/                  # Utilities
     ├── __init__.py
     ├── auth.py
@@ -163,7 +164,8 @@ MAX_FILE_SIZE=10485760  # 10MB in bytes
 - `DELETE /api/v1/files/{file_id}` - Delete file
 
 ### WebSocket
-- `WS /ws/{room_id}/{user_id}` - Real-time communication
+- `WS /ws/{room_id}/{user_id}` - Real-time chat communication
+- `WS /yjs/{room_id}` - Real-time whiteboard collaboration
 
 ## WebSocket Message Types
 
@@ -176,16 +178,42 @@ MAX_FILE_SIZE=10485760  # 10MB in bytes
 }
 ```
 
-### Whiteboard Actions
+### Whiteboard Collaboration Messages
 ```json
 {
-  "type": "whiteboard_action",
-  "action_type": "draw",
-  "x": 100.5,
-  "y": 200.3,
-  "color": "#FF0000",
-  "brush_size": 2,
-  "is_drawing": true
+  "type": "stroke_added",
+  "stroke": {
+    "id": "1234567890-0.123",
+    "points": [{"x": 100.5, "y": 200.3}, {"x": 102.1, "y": 201.7}],
+    "color": "#FF0000",
+    "brush_size": 2,
+    "user_id": "user@example.com",
+    "username": "John Doe",
+    "timestamp": "2024-01-01T12:00:00.000Z"
+  }
+}
+```
+
+```json
+{
+  "type": "canvas_cleared",
+  "user": {
+    "id": "user@example.com",
+    "name": "John Doe"
+  }
+}
+```
+
+```json
+{
+  "type": "document_state",
+  "state": {
+    "strokes": [...],
+    "canvas_state": {
+      "background": "#ffffff",
+      "last_updated": "2024-01-01T12:00:00.000Z"
+    }
+  }
 }
 ```
 
