@@ -381,4 +381,4 @@ isort .
 ## 🎯 Roadmap
 
 - [ ] Implement api authentication
-- [ ] Remove public access to cloud storage and provide authenticated URLs for shared files
+- [x] Remove public access to cloud storage and provide authenticated URLs for shared files
