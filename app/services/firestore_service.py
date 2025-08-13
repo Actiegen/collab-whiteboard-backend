@@ -219,4 +219,20 @@ class FirestoreService:
         ).order_by("created_at", direction=firestore.Query.DESCENDING)
         
         docs = query.stream()
-        return [FileResponse(**doc.to_dict()) for doc in docs] 
+        files = []
+        for doc in docs:
+            data = doc.to_dict()
+            files.append(FileResponse(**data))
+        return files
+
+    async def get_file_by_id(self, file_id: str) -> Optional[FileResponse]:
+        """Get a file by its ID"""
+        try:
+            doc = self.files_collection.document(file_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                return FileResponse(**data)
+            return None
+        except Exception as e:
+            print(f"Error getting file by ID: {e}")
+            return None 

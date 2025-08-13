@@ -1,5 +1,7 @@
 from google.cloud import storage
-from google.cloud.storage.blob import Blob
+from google.oauth2 import service_account
+from google.auth import impersonated_credentials
+import google.auth
 from typing import Optional
 import uuid
 from datetime import datetime, timedelta
@@ -8,9 +10,34 @@ from app.config import settings
 
 class StorageService:
     def __init__(self):
-        # Use default credentials - will use gcloud auth locally and Cloud Run service account in production
-        self.client = storage.Client(project=settings.google_project_id)
+        # Use Application Default Credentials (ADC)
+        # Locally: uses gcloud auth application-default login
+        # Production: uses Cloud Run default service account
+        self.credentials, self.project = google.auth.default()
+        self.client = storage.Client(project=settings.google_project_id, credentials=self.credentials)
         self._bucket = None
+        
+        # For signed URLs, we need to impersonate a service account
+        # In production (Cloud Run), this will be the same service account
+        # Locally, we impersonate the App Engine default service account
+        self.signing_credentials = self._get_signing_credentials()
+
+    def _get_signing_credentials(self):
+        """Get credentials capable of signing URLs"""
+        # App Engine default service account email
+        service_account_email = f"{settings.google_project_id}@appspot.gserviceaccount.com"
+        
+        try:
+            # Try to create impersonated credentials for signing
+            signing_credentials = impersonated_credentials.Credentials(
+                source_credentials=self.credentials,
+                target_principal=service_account_email,
+                target_scopes=['https://www.googleapis.com/auth/devstorage.read_write'],
+            )
+            return signing_credentials
+        except Exception as e:
+            print(f"Warning: Could not create signing credentials: {e}")
+            return None
 
     @property
     def bucket(self):
@@ -35,10 +62,32 @@ class StorageService:
         return unique_filename
 
     async def generate_download_url(self, filename: str, expiration_hours: int = 24) -> str:
-        """Generate a public download URL for a file"""
-        # For now, use public URL instead of signed URL
-        # This requires the bucket to be public or the object to be public
-        return f"https://storage.googleapis.com/{settings.storage_bucket_name}/{filename}"
+        """Generate a signed URL for secure file access"""
+        blob = self.bucket.blob(filename)
+        
+        # Generate signed URL that expires after specified hours
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(hours=expiration_hours),
+            method="GET",
+            credentials=self.signing_credentials
+        )
+        
+        return url
+
+    async def generate_preview_url(self, filename: str, expiration_minutes: int = 60) -> str:
+        """Generate a short-lived signed URL for file preview"""
+        blob = self.bucket.blob(filename)
+        
+        # Generate short-lived signed URL for previews
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(minutes=expiration_minutes),
+            method="GET",
+            credentials=self.signing_credentials
+        )
+        
+        return url
 
     async def delete_file(self, filename: str) -> bool:
         """Delete a file from Google Cloud Storage"""

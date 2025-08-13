@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     
     # Google Cloud Settings
     google_project_id: str = os.getenv("GOOGLE_PROJECT_ID", "")
+    # google_application_credentials is optional - when not set, uses ADC
     google_application_credentials: Optional[str] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     
     # Firestore Settings

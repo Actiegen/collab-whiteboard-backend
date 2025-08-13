@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from typing import List
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import List, Optional
 from app.models.file import FileUpload, FileResponse
 from app.services.firestore_service import FirestoreService
 from app.services.storage_service import StorageService
@@ -8,6 +9,28 @@ import uuid
 router = APIRouter()
 firestore_service = FirestoreService()
 storage_service = None  # Will be initialized when needed
+security = HTTPBearer(auto_error=False)
+
+
+async def verify_user_access_to_room(user_id: str, room_id: str) -> bool:
+    """Verify if user has access to the room"""
+    # TODO: Implement proper room membership verification
+    # For now, we'll verify room exists and user exists
+    room = await firestore_service.get_room(room_id)
+    user = await firestore_service.get_user(user_id)
+    return room is not None and user is not None
+
+
+async def get_current_user_id(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> str:
+    """Extract user ID from token or require user_id parameter"""
+    # For now, this is a placeholder - you'll need to implement proper JWT token validation
+    # or extract user info from Google OAuth token
+    if credentials:
+        # TODO: Validate JWT token and extract user_id
+        pass
+    
+    # For backward compatibility, we'll still accept user_id as parameter
+    return None
 
 
 @router.post("/upload", response_model=FileResponse)
@@ -59,8 +82,9 @@ async def upload_file(
             file.content_type
         )
         
-        # Generate download URL
-        download_url = await storage_service.generate_download_url(filename)
+        # Generate secure download URL for initial response
+        # Note: This URL will be used in chat but frontend should request fresh URLs for actual access
+        download_url = await storage_service.generate_download_url(filename, expiration_hours=1)  # Short expiration for initial share
         
         # Save file info to database
         file_data = FileUpload(
@@ -84,8 +108,8 @@ async def upload_file(
 
 
 @router.get("/rooms/{room_id}/files", response_model=List[FileResponse])
-async def get_room_files(room_id: str):
-    """Get all files for a room"""
+async def get_room_files_old(room_id: str):
+    """Get all files for a room (deprecated - use version with user_id)"""
     # Verify room exists
     room = await firestore_service.get_room(room_id)
     if not room:
@@ -96,28 +120,79 @@ async def get_room_files(room_id: str):
 
 
 @router.get("/{file_id}/download")
-async def get_file_download_url(file_id: str):
-    """Get download URL for a file"""
+async def get_file_download_url(file_id: str, user_id: str):
+    """Get secure download URL for a file with access control"""
+    global storage_service
+    
+    if storage_service is None:
+        try:
+            storage_service = StorageService()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Storage service not available: {str(e)}")
+    
     # Get file info from database
-    files = await firestore_service.get_room_files("")  # This needs to be improved
-    file_info = None
-    for file in files:
-        if file.id == file_id:
-            file_info = file
-            break
+    file_info = await firestore_service.get_file_by_id(file_id)
     
     if not file_info:
         raise HTTPException(status_code=404, detail="File not found")
     
-    # Generate new download URL
-    download_url = await storage_service.generate_download_url(file_info.filename)
+    # Verify user has access to the room containing this file
+    if not await verify_user_access_to_room(user_id, file_info.room_id):
+        raise HTTPException(status_code=403, detail="Access denied to this file")
+    
+    # Generate secure download URL (24 hour expiration)
+    download_url = await storage_service.generate_download_url(file_info.filename, expiration_hours=24)
     
     return {
         "download_url": download_url,
         "filename": file_info.filename,
         "content_type": file_info.content_type,
-        "size": file_info.size
+        "size": file_info.size,
+        "expires_in_hours": 24
     }
+
+
+@router.get("/{file_id}/preview")
+async def get_file_preview_url(file_id: str, user_id: str):
+    """Get secure preview URL for a file with short expiration"""
+    global storage_service
+    
+    if storage_service is None:
+        try:
+            storage_service = StorageService()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Storage service not available: {str(e)}")
+    
+    # Get file info from database
+    file_info = await firestore_service.get_file_by_id(file_id)
+    
+    if not file_info:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Verify user has access to the room containing this file
+    if not await verify_user_access_to_room(user_id, file_info.room_id):
+        raise HTTPException(status_code=403, detail="Access denied to this file")
+    
+    # Generate secure preview URL (1 hour expiration)
+    preview_url = await storage_service.generate_preview_url(file_info.filename, expiration_minutes=60)
+    
+    return {
+        "preview_url": preview_url,
+        "filename": file_info.filename,
+        "content_type": file_info.content_type,
+        "expires_in_minutes": 60
+    }
+
+
+@router.get("/rooms/{room_id}/files", response_model=List[FileResponse])
+async def get_room_files(room_id: str, user_id: str):
+    """Get all files for a room with access control"""
+    # Verify user has access to the room
+    if not await verify_user_access_to_room(user_id, room_id):
+        raise HTTPException(status_code=403, detail="Access denied to this room")
+    
+    files = await firestore_service.get_room_files(room_id)
+    return files
 
 
 @router.delete("/{file_id}")
