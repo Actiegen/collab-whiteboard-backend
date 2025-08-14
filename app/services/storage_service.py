@@ -89,6 +89,20 @@ class StorageService:
         
         return url
 
+    async def generate_signed_url(self, filename: str, expiration_hours: int = 1) -> str:
+        """Generate a signed URL for any file access with custom expiration"""
+        blob = self.bucket.blob(filename)
+        
+        # Generate signed URL that expires after specified hours
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(hours=expiration_hours),
+            method="GET",
+            credentials=self.signing_credentials
+        )
+        
+        return url
+
     async def delete_file(self, filename: str) -> bool:
         """Delete a file from Google Cloud Storage"""
         try:

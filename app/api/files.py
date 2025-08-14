@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
+from pydantic import BaseModel
 from app.models.file import FileUpload, FileResponse
 from app.services.firestore_service import FirestoreService
 from app.services.storage_service import StorageService
@@ -10,6 +11,12 @@ router = APIRouter()
 firestore_service = FirestoreService()
 storage_service = None  # Will be initialized when needed
 security = HTTPBearer(auto_error=False)
+
+
+class LegacyFileRefreshRequest(BaseModel):
+    filename: str
+    user_email: str
+    file_type: str
 
 
 async def verify_user_access_to_room(user_id: str, room_id: str) -> bool:
@@ -224,4 +231,37 @@ async def delete_file(file_id: str, user_id: str):
         return {"message": "File deleted successfully"}
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File deletion failed: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"File deletion failed: {str(e)}")
+
+
+@router.post("/legacy/refresh")
+async def refresh_legacy_file(request: LegacyFileRefreshRequest):
+    """Generate a new signed URL for a legacy file"""
+    global storage_service
+    
+    # Initialize storage service if needed
+    if storage_service is None:
+        try:
+            storage_service = StorageService()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Storage service not available: {str(e)}")
+    
+    try:
+        # Verify the file exists in storage
+        if not await storage_service.file_exists(request.filename):
+            raise HTTPException(status_code=404, detail="Legacy file not found in storage")
+        
+        # Generate new signed URLs for the legacy file
+        # Use shorter expiry for preview (1 hour) since it's for display
+        preview_url = await storage_service.generate_signed_url(request.filename, expiration_hours=1)
+        download_url = await storage_service.generate_signed_url(request.filename, expiration_hours=24)
+        
+        return {
+            "preview_url": preview_url,
+            "download_url": download_url,
+            "filename": request.filename,
+            "message": "Legacy file URLs refreshed successfully"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to refresh legacy file URLs: {str(e)}")
